@@ -15,8 +15,9 @@ extern "C" {
 #include <random>
 #include <chrono>
 
-
 using namespace std::chrono_literals;
+
+const unsigned CYCLES_TO_WAIT = 480;
 
 void reg_hotkey_wrapper(UINT vk, UINT mod = MOD_NOREPEAT) {
     if (RegisterHotKey(NULL, 1, mod, vk))
@@ -40,8 +41,12 @@ std::random_device rd;
 std::mt19937 gen(rd());
 std::uniform_int_distribution<> ud(-20, 20);
 void move_mouse() {
+    unsigned counter = 0;
+    POINT curr_pos{0,0};
+    POINT pos{0,0};
+    GetCursorPos(&curr_pos);
     while (!exit_condition) {
-        if (random_moving) {
+        if (random_moving.load()) {
             // 1. SetCursorPos - doesn't work mouse is not really moving
             //GetCursorPos(&cursorPos);
             //SetCursorPos(cursorPos.x + ud(gen), cursorPos.y + ud(gen));
@@ -64,7 +69,22 @@ void move_mouse() {
 
         }
         else {
-            std::this_thread::sleep_for(200ms);
+            std::this_thread::sleep_for(500ms);
+            GetCursorPos(&pos);
+            if (pos.x == curr_pos.x && pos.y == curr_pos.y) {
+                ++counter;
+#ifdef _DEBUG
+                std::cout << "tick " << counter << '\n';
+#endif
+                if (counter >= CYCLES_TO_WAIT) {
+                    counter = 0;
+                    random_moving.store(true);
+                }
+            }
+            else {
+                counter = 0;
+            }
+            std::swap(curr_pos, pos);
         }
     }
 }
@@ -103,6 +123,7 @@ int main()
               "===== ===== =====\n";
 
     MSG msg = { 0 };
+    bool old;
     while (GetMessage(&msg, NULL, 0, 0) != 0)
     {
         //std::cout << "\nMessage:" << msg.message;
@@ -134,7 +155,9 @@ int main()
                     }
                     std::cout << '\n';
 #endif // _DEBUG
-                    random_moving = random_moving ? false : true;
+                    old = random_moving.load();
+                    while (!random_moving.compare_exchange_weak(old, !old)) {}
+                    break;
 //            case VK_F2:
 //#ifdef _DEBUG
 //                std::cout << "CLICKING\n";
