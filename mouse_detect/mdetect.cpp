@@ -46,7 +46,14 @@ void installRunUninstall(installFn install, uninstallFn uninstall) {
 	// RUN
 	MSG msg = { 0 };
 	while (!stop.load()) {
-		// this was added just because I don't know what I'm doing
+		/*	From LowLevelMouseProc documentation:
+
+			This hook is called in the context of the thread that installed it.
+			The call is made by sending a message to the thread that installed the hook.
+			!!! Therefore, the thread that installed the hook must have a message loop. !!!
+
+			So, in other words, the message loop with GetMessage/PeekMessage is REQUIRED!
+		*/
 		BOOL peeked = PeekMessageA(
 			&msg,
 			NULL,
@@ -57,7 +64,7 @@ void installRunUninstall(installFn install, uninstallFn uninstall) {
 		if (peeked) {
 			std::cout << "THREAD: M DOWN/UP (" << msg.pt.x << ',' << msg.pt.y << ")\n";
 		}
-		// maybe a simple busy loop is better because PeekMessageA has no effect here
+		// A simple busy loop WON'T WORK!
 	}
 	// UNINSTALL HOOK
 	while (!uninstall()) {
@@ -88,13 +95,7 @@ int main(int /*argc*/, const char** /*argv*/) {
 		return 0;
 	}
 	// RUN THREAD
-	/*	It seems like LowLevelMouseProc shares the CPU resources of the thread, which
-		installed the HOOK with SetWindowsHookExA. So I can't just sleep in main thread
-		because this causes everything to freeze.
-
-		But the question stays: what do I do in the spawned thread?
-		Should I just leave it as a busy loop or what?
-	*/
+	// Moved message loop to a thread. Read more on this in installRunUninstall comments
 	std::thread iruThread(installRunUninstall, install, uninstall);
 	// JUST WAIT 5s for now
 	std::cout << "SLEEP...\n";
