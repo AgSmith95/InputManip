@@ -23,3 +23,4 @@ set(
 add_executable(InputManip ${SOURCE_FILES})
 
 add_subdirectory(mouse_mover)
+add_subdirectory(mouse_detect)
