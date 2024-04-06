@@ -1,14 +1,3 @@
-#include <iostream>
-#include <atomic>
-#include <thread>
-
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-
-#include "Windows.h"
-#include "WinUser.h"
-
 /*
 1st Route: HOOKS
 SetWindowsHookExA
@@ -27,6 +16,19 @@ RawInput
 
 */
 
+#include <iostream>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+#include "Windows.h"
+#include "WinUser.h"
+
+
 typedef BOOL (*installFn)();
 typedef BOOL (*uninstallFn)();
 
@@ -44,6 +46,7 @@ void installRunUninstall(installFn install, uninstallFn uninstall) {
 	// RUN
 	MSG msg = { 0 };
 	while (!stop.load()) {
+		// this was added just because I don't know what I'm doing
 		BOOL peeked = PeekMessageA(
 			&msg,
 			NULL,
@@ -54,6 +57,7 @@ void installRunUninstall(installFn install, uninstallFn uninstall) {
 		if (peeked) {
 			std::cout << "THREAD: M DOWN/UP (" << msg.pt.x << ',' << msg.pt.y << ")\n";
 		}
+		// maybe a simple busy loop is better because PeekMessageA has no effect here
 	}
 	// UNINSTALL HOOK
 	while (!uninstall()) {
@@ -84,6 +88,13 @@ int main(int /*argc*/, const char** /*argv*/) {
 		return 0;
 	}
 	// RUN THREAD
+	/*	It seems like LowLevelMouseProc shares the CPU resources of the thread, which
+		installed the HOOK with SetWindowsHookExA. So I can't just sleep in main thread
+		because this causes everything to freeze.
+
+		But the question stays: what do I do in the spawned thread?
+		Should I just leave it as a busy loop or what?
+	*/
 	std::thread iruThread(installRunUninstall, install, uninstall);
 	// JUST WAIT 5s for now
 	std::cout << "SLEEP...\n";
