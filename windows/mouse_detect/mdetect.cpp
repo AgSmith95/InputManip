@@ -76,8 +76,11 @@ void installRunUninstall(installFn install, uninstallFn uninstall) {
 
 int main(int /*argc*/, const char** /*argv*/) {
 	stop.store(false);
-	// OPEN DLL
+	// OPEN DLL which detects mouse clicks
 	HMODULE MouseDetectorDLL = LoadLibraryA("MouseDetectorDLL.dll");
+	if (MouseDetectorDLL == NULL) { // other compiler name this differently
+		MouseDetectorDLL = LoadLibraryA("libMouseDetectorDLL.dll");
+	}
 	if (MouseDetectorDLL == NULL) {
 		std::cout << "MouseDetectorDLL wasn't properly loaded. Exiting.\n";
 		return 0;

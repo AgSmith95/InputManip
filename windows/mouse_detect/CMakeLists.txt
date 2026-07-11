@@ -11,10 +11,10 @@ add_library(
     ${MOUSE_DETECTOR_DLL} SHARED
     ${SOURCE_FILES_MDETECTOR_DLL}
 )
-# set_target_properties(
-#     ${MOUSE_DETECTOR_DLL} PROPERTIES
-#     LINKER_LANGUAGE C
-# )
+#set_target_properties(
+#    ${MOUSE_DETECTOR_DLL} PROPERTIES
+#    LINKER_LANGUAGE C
+#)
 target_link_libraries(
     ${MOUSE_DETECTOR_DLL}
     ws2_32
