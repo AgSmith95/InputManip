@@ -1,9 +1,41 @@
 #include <fcntl.h>
+#include <linux/input.h>
 #include <linux/uinput.h>
 #include <unistd.h>
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
+#include <mutex>
+#include <thread>
+#include <vector>
+
+// macros to test bits within an array
+#define BITS_PER_LONG (sizeof(unsigned long) * 8)
+#define NBITS(x) ((((x)-1)/BITS_PER_LONG)+1)
+#define OFF(x)  ((x)%BITS_PER_LONG)
+#define BIT(x)  ((x)/BITS_PER_LONG)
+#define LONG(x) ((x)/BITS_PER_LONG)
+#define TEST_BIT(bit, array) ((array[LONG(bit)] >> OFF(bit)) & 1)
+
+// Debug log macro
+#ifdef NDEBUG
+	// Release - noop
+	#define DLOG(x) ;
+#else
+	#define DLOG(x) x;
+#endif // NDEBUG
+
+namespace fs = std::filesystem;
+
+// Synchronization primitives
+std::atomic<bool> is_clicking(false);
+std::mutex cv_m;
+std::condition_variable cv;
+
 
 // Helper function to emit input events to the kernel
 void emit(int fd, int type, int code, int val) {
@@ -18,9 +50,69 @@ void emit(int fd, int type, int code, int val) {
 	}
 }
 
-// just click 20 times for now to test basic functions
+// listens for a keypress
+void keyboard_listener(int fd, std::string device_path) {
+	struct input_event ie;
+	while (true) {
+		// This is a blocking read. The OS puts this thread to sleep
+		// until the kernel delivers a new input event. 0% CPU usage.
+		if (read(fd, &ie, sizeof(ie)) > 0) {
+			if (ie.type == EV_KEY && ie.code == KEY_F2 && ie.value == 1) {
+				is_clicking = !is_clicking;
+				DLOG(std::cout << "\nF2 is pressed on '" << device_path << '\'';)
+				if (is_clicking) {
+					std::cout << "\n[+] Clicking STARTED" << std::endl;
+					// "Interrupt" the main thread to wake it up
+					cv.notify_one();
+				} else {
+					std::cout << "\n[-] Clicking STOPPED" << std::endl;
+				}
+			}
+		}
+	}
+}
+
+// checks if a device is a keyboard that supports F2 key
+bool is_dev_with_keyevent(int fd) {
+	unsigned long key_bitmask[NBITS(EV_MAX)];
+	memset(key_bitmask, 0, sizeof(key_bitmask));
+	// Get supported event types (EV_SYN, EV_KEY, EV_REL, etc.)
+	if (ioctl(fd, EVIOCGBIT(0, sizeof(key_bitmask)), key_bitmask) < 0) {
+		std::cerr << "ERROR: ioctl\n";
+		return false;
+	}
+	// Check if EV_KEY type is supported
+	return TEST_BIT(EV_KEY, key_bitmask);
+}
+
+// Toggle clicking by pressing F2
+// NOTE: this has to be called with sudo, because of ioctl and /dev/uinput
 int main(int argc, char** argv) {
-	// 1. Open the uinput device
+	// Spawn listener threads
+	std::vector<std::thread> listener_threads;
+	for (const auto& entry : fs::directory_iterator("/dev/input")) {
+		std::string path = entry.path().string();
+		if (path.find("event") != std::string::npos) {// only check /dev/input/*event*
+			int ev_fd = open(path.c_str(), O_RDONLY); // O_RDONLY makes read() blocking
+			bool with_ev_key = is_dev_with_keyevent(ev_fd);
+			DLOG(std::cout << '\'' << path << "' supports EV_KEY? - " << with_ev_key << std::endl)
+			if (ev_fd >= 0) {
+				if (with_ev_key) {
+					listener_threads.emplace_back(keyboard_listener, ev_fd, path);
+				} else {
+					close(ev_fd);
+				}
+			}
+		}
+	}
+	if (listener_threads.size() == 0) {
+		std::cout << "No suitable keyboards detected!\n";
+		return 1;
+	}
+	std::cout << "Listening on " << listener_threads.size() << " keyboards\n";
+
+	// SET UP VIRTUAL MOUSE | START
+	// Open the uinput device
 	int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
 	if (fd < 0) {
 		std::cerr
@@ -29,12 +121,12 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	// 2. Configure the virtual device to support keys/buttons, specifically the
+	// Configure the virtual device to support keys/buttons, specifically the
 	// Left Mouse Button
 	ioctl(fd, UI_SET_EVBIT, EV_KEY);
 	ioctl(fd, UI_SET_KEYBIT, BTN_LEFT);
 
-	// 3. Setup the device details
+	// Setup the device details
 	struct uinput_setup usetup;
 	memset(&usetup, 0, sizeof(usetup));
 	usetup.id.bustype = BUS_USB;
@@ -44,7 +136,7 @@ int main(int argc, char** argv) {
 
 	ioctl(fd, UI_DEV_SETUP, &usetup);
 
-	// 4. Create the device
+	// Create the device
 	if (ioctl(fd, UI_DEV_CREATE) < 0) {
 		std::cerr << "Error: Could not create uinput device." << std::endl;
 		close(fd);
@@ -53,26 +145,35 @@ int main(int argc, char** argv) {
 
 	// Give the desktop environment a second to recognize the new "hardware"
 	// TODO: figure out how to detect this recognition instead of simply sleeping
-	std::cout << "Virtual device created. Waiting 2 seconds..." << std::endl;
-	usleep(2'000'000);
+//	std::cout << "Virtual device created. Waiting 2 seconds..." << std::endl;
+//	usleep(2'000'000);
+	// SET UP VIRTUAL MOUSE | FINISH
 
-	// 5. Simulate the click
-	std::cout << "Clicking!" << std::endl;
-	for (int i = 1; i < 21; ++i) {
-		// Press the left button down
+	std::cout << "Setup complete. Press F2 to toggle clicking, Ctrl+C to exit" << std::endl;
+
+	// MAIN CLICKING LOOP
+	while (true) {
+		{
+			std::unique_lock<std::mutex> lk(cv_m);
+			// If is_clicking is false, the thread suspends here indefinitely.
+			// When cv.notify_one() is called, it wakes up, checks is_clicking,
+			// and proceeds.
+			cv.wait(lk, [] { return is_clicking.load(); });
+		} // The mutex is unlocked here so we don't hold it during the click delay
+
+		// Reaching this point means is_clicking is true
 		emit(fd, EV_KEY, BTN_LEFT, 1);
 		emit(fd, EV_SYN, SYN_REPORT, 0); // Sync event tells the OS the event is complete
 		// Release the left button
 		emit(fd, EV_KEY, BTN_LEFT, 0);
 		emit(fd, EV_SYN, SYN_REPORT, 0); // Sync event tells the OS the event is complete
-		std::cout << i << ' ' << std::flush; // doesn't print one by one without flush. understandable.
-		usleep(25'000); // sleep short amount of time; TODO: loop doesn't work without sleep; figur eout why?
+
+		usleep(25'000); // sleep short amount of time; TODO: loop doesn't work without sleep; figure out why?
 		// TODO: lowering from 0.1 to 0.01s makes the whole thing stop working; 0.025s seems fine on my device
 		// TODO: figure out how to check when the event actually finishes instead of rapid-firing as fast as possible
 	}
-	std::cout << '\n';
 
-	// 6. Clean up
+	// Clean up
 	ioctl(fd, UI_DEV_DESTROY);
 	close(fd);
 
