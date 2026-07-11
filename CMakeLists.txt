@@ -4,12 +4,8 @@ project(InputManip)
 set(CMAKE_CXX_STANDARD 17)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_options(-D_DEBUG)
+    add_compile_definitions(_DEBUG)
 else()
-    set(
-        CMAKE_BUILD_TYPE
-        Release
-    )
     set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 endif()
 message("it is ${CMAKE_BUILD_TYPE} build")
@@ -19,4 +15,6 @@ if(WIN32)
     add_subdirectory(windows)
 elseif(LINUX)
     add_subdirectory(linux)
+else()
+    message("ERROR: unsupported OS")
 endif()

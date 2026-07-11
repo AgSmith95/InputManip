@@ -22,12 +22,11 @@
 #define TEST_BIT(bit, array) ((array[LONG(bit)] >> OFF(bit)) & 1)
 
 // Debug log macro
-#ifdef NDEBUG
-	// Release - noop
-	#define DLOG(x) ;
-#else
+#ifdef _DEBUG
 	#define DLOG(x) x;
-#endif // NDEBUG
+#else // Release - noop
+	#define DLOG(x) ;
+#endif // _DEBUG
 
 namespace fs = std::filesystem;
 
@@ -78,7 +77,7 @@ bool is_dev_with_keyevent(int fd) {
 	memset(key_bitmask, 0, sizeof(key_bitmask));
 	// Get supported event types (EV_SYN, EV_KEY, EV_REL, etc.)
 	if (ioctl(fd, EVIOCGBIT(0, sizeof(key_bitmask)), key_bitmask) < 0) {
-		std::cerr << "ERROR: ioctl\n";
+		DLOG(std::cerr << "ERROR: ioctl\n";)
 		return false;
 	}
 	// Check if EV_KEY type is supported
