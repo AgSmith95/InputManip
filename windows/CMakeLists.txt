@@ -1,0 +1,3 @@
+add_subdirectory(input_manip)
+add_subdirectory(mouse_mover)
+add_subdirectory(mouse_detect)
