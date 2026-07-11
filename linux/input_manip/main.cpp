@@ -66,7 +66,9 @@ int main(int argc, char** argv) {
 		emit(fd, EV_KEY, BTN_LEFT, 0);
 		emit(fd, EV_SYN, SYN_REPORT, 0); // Sync event tells the OS the event is complete
 		std::cout << i << ' ' << std::flush; // doesn't print one by one without flush. understandable.
-		usleep(100'000); // sleep 0.1s; TODO: loop doesn't work without sleep; figur eout why?
+		usleep(25'000); // sleep short amount of time; TODO: loop doesn't work without sleep; figur eout why?
+		// TODO: lowering from 0.1 to 0.01s makes the whole thing stop working; 0.025s seems fine on my device
+		// TODO: figure out how to check when the event actually finishes instead of rapid-firing as fast as possible
 	}
 	std::cout << '\n';
 
