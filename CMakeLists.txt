@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.25)
 project(InputManip)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -17,4 +17,6 @@ add_definitions(-DBUILD_TYPE="${CMAKE_BUILD_TYPE}")
 
 if(WIN32)
     add_subdirectory(windows)
+elseif(LINUX)
+    add_subdirectory(linux)
 endif()

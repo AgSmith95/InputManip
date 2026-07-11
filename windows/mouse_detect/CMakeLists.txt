@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.25)
 
 set(MOUSE_DETECTOR_EXE MouseDetector)
 set(MOUSE_DETECTOR_DLL MouseDetectorDLL)
