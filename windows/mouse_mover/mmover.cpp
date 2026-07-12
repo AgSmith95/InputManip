@@ -19,7 +19,11 @@ using namespace std::chrono_literals;
 
 constexpr std::chrono::milliseconds DELAY_BETWEEN_MOVES = 100ms;
 constexpr std::chrono::milliseconds DELAY_BETWEEN_CHECKS = 500ms;
+#ifdef _DEBUG
+const unsigned CYCLES_TO_WAIT = 10;
+#else
 const unsigned CYCLES_TO_WAIT = 120;
+#endif
 
 void reg_hotkey_wrapper(UINT vk, UINT mod = MOD_NOREPEAT) {
     if (RegisterHotKey(NULL, 1, mod, vk))
@@ -43,15 +47,14 @@ std::random_device rd;
 std::mt19937 gen(rd());
 std::uniform_int_distribution<> ud(-20, 20);
 std::atomic<POINT> global_pos{POINT{0,0}};
+std::atomic_uint counter = 0;
 void move_mouse() {
-    unsigned counter = 0;
     POINT curr_pos{0,0};
     POINT pos{0,0};
     GetCursorPos(&curr_pos);
     while (!exit_condition.load()) {
         if (random_moving.load()) {
             // 1. SetCursorPos - doesn't work mouse is not really moving
-            //GetCursorPos(&cursorPos);
             //SetCursorPos(cursorPos.x + ud(gen), cursorPos.y + ud(gen));
 
             // 2. SendInput - screen flickers
@@ -80,9 +83,9 @@ void move_mouse() {
             if (pos.x == curr_pos.x && pos.y == curr_pos.y) {
                 ++counter;
 				#ifdef _DEBUG
-                std::cout << "tick " << counter << '\n';
+                std::cout << "tick " << counter.load() << '\n';
 				#endif
-                if (counter >= CYCLES_TO_WAIT) {
+                if (counter.load() >= CYCLES_TO_WAIT) {
                     counter = 0;
                     random_moving.store(true);
                 }
@@ -120,6 +123,7 @@ void toggleMoving(bool &movingEnabled)
 	}
 	else {
 		std::cout << "STOP";
+		counter = 0;
 	}
 	std::cout << '\n';
 	#endif // _DEBUG
@@ -137,19 +141,19 @@ void rightClick()
 
 int main()
 {
-    //reg_hotkey_wrapper(VK_ESCAPE);
+    reg_hotkey_wrapper(VK_F10);
     reg_hotkey_wrapper(VK_F1);
     reg_hotkey_wrapper(VK_F2);
 
-    //std::thread mover(move_mouse);
+    std::thread mover(move_mouse);
     //std::thread clicker(left_click);
 
     std::cout <<
               "\n\n"
               "===== ===== =====\n"
-              //"ESC - exit\n"
-              "F1 - stop/start moving\n"
-              //"F2 - stop/start clicking\n"
+              "F1  - stop/start moving\n"
+              "F2  - right click\n"
+              "F10 - EXIT\n"
               "===== ===== =====\n";
 
     MSG msg = { 0 };
@@ -168,12 +172,12 @@ int main()
 
             switch (htonl(msg.lParam) >> 8)
             {
-                case VK_ESCAPE:
+                case VK_F10:
+				{
                     std::cout << "Exiting\n";
                     exit_condition = true;
-                    //mover.join();
-                    //clicker.join();
                     return 0;
+				}
                 case VK_F1:
 				{
 					toggleMoving(movingEnabled);
@@ -190,6 +194,8 @@ int main()
         }
     }
 
-
+	exit_condition = true;
+	mover.join();
+	//clicker.join();
     return 0;
 }
