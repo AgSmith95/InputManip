@@ -72,16 +72,26 @@ void keyboard_listener(int fd, std::string device_path) {
 }
 
 // checks if a device is a keyboard that supports F2 key
-bool is_dev_with_keyevent(int fd) {
-	unsigned long key_bitmask[NBITS(EV_MAX)];
-	memset(key_bitmask, 0, sizeof(key_bitmask));
+bool is_keyboard_with_F2(int fd) {
+	unsigned long evbit[NBITS(EV_MAX)];
+	memset(evbit, 0, sizeof(evbit));
 	// Get supported event types (EV_SYN, EV_KEY, EV_REL, etc.)
-	if (ioctl(fd, EVIOCGBIT(0, sizeof(key_bitmask)), key_bitmask) < 0) {
-		DLOG(std::cerr << "ERROR: ioctl\n";)
+	if (ioctl(fd, EVIOCGBIT(0, sizeof(evbit)), evbit) < 0) {
+		DLOG(std::cerr << "ERROR: ioctl EVIOCGBIT(0)\n";)
 		return false;
 	}
-	// Check if EV_KEY type is supported
-	return TEST_BIT(EV_KEY, key_bitmask);
+	// Check if EV_KEY type is supported, if not - not a keyboard
+	if (!TEST_BIT(EV_KEY, evbit)) {
+		return false;
+	}
+	// Check if F2 button is on the keyboard
+	unsigned long keybit[NBITS(KEY_MAX)];
+	memset(keybit, 0, sizeof(keybit));
+	if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybit)), keybit) < 0) {
+		DLOG(std::cerr << "ERROR: ioctl EVIOCGBIT(EV_KEY)\n";)
+		return false;
+	}
+	return TEST_BIT(KEY_F2, keybit);
 }
 
 // Toggle clicking by pressing F2
@@ -93,7 +103,7 @@ int main(int argc, char** argv) {
 		std::string path = entry.path().string();
 		if (path.find("event") != std::string::npos) {// only check /dev/input/*event*
 			int ev_fd = open(path.c_str(), O_RDONLY); // O_RDONLY makes read() blocking
-			bool with_ev_key = is_dev_with_keyevent(ev_fd);
+			bool with_ev_key = is_keyboard_with_F2(ev_fd);
 			DLOG(std::cout << '\'' << path << "' supports EV_KEY? - " << with_ev_key << std::endl)
 			if (ev_fd >= 0) {
 				if (with_ev_key) {
