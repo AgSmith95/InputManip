@@ -17,6 +17,13 @@ extern "C" {
 
 using namespace std::chrono_literals;
 
+// Debug log macro
+#ifdef _DEBUG
+	#define DLOG(x) x;
+#else // Release - noop
+	#define DLOG(x) ;
+#endif // _DEBUG
+
 constexpr std::chrono::milliseconds DELAY_BETWEEN_MOVES = 100ms;
 constexpr std::chrono::milliseconds DELAY_BETWEEN_CHECKS = 500ms;
 #ifdef _DEBUG
@@ -28,9 +35,7 @@ const unsigned CYCLES_TO_WAIT = 120;
 void reg_hotkey_wrapper(UINT vk, UINT mod = MOD_NOREPEAT) {
     if (RegisterHotKey(NULL, 1, mod, vk))
     {
-		#ifdef _DEBUG
-        std::cout << "Hotkey '0x" << std::hex << vk << "' registered, using MOD_NOREPEAT flag\n";
-		#endif // _DEBUG
+        DLOG(std::cout << "Hotkey '0x" << std::hex << vk << "' registered, using MOD_NOREPEAT flag\n";)
     }
     else
     {
@@ -46,56 +51,59 @@ std::atomic<bool> random_moving = false;
 std::random_device rd;
 std::mt19937 gen(rd());
 std::uniform_int_distribution<> ud(-20, 20);
-std::atomic<POINT> global_pos{POINT{0,0}};
+std::atomic<POINT> prev_cursor_pos{POINT{0,0}};
 std::atomic_uint counter = 0;
+
 void move_mouse() {
-    POINT curr_pos{0,0};
-    POINT pos{0,0};
-    GetCursorPos(&curr_pos);
-    while (!exit_condition.load()) {
-        if (random_moving.load()) {
-            // 1. SetCursorPos - doesn't work mouse is not really moving
-            //SetCursorPos(cursorPos.x + ud(gen), cursorPos.y + ud(gen));
+	POINT curr_cursor_pos{0,0};
+	GetCursorPos(&curr_cursor_pos); // init current cursor position
+	prev_cursor_pos.store(curr_cursor_pos);// init previous cursor position
 
-            // 2. SendInput - screen flickers
-            //    -- flickering is because you have garbage in struct sometimes
-            //    -- zero it out using memset or something
-            //INPUT input;
-            //input.type = INPUT_MOUSE;
-            //input.mi.mouseData = 0;
-            //input.mi.dwFlags = MOUSEEVENTF_MOVE;
-            //input.mi.dx = ud(gen);
-            //input.mi.dy = ud(gen);
-            //input.mi.dwExtraInfo = NULL;
-            //SendInput(1, &input, sizeof(input));
+	while (!exit_condition.load()) {
+		std::this_thread::sleep_for(DELAY_BETWEEN_CHECKS);
+		GetCursorPos(&curr_cursor_pos); // get current cursor position
+		POINT pos = prev_cursor_pos.load(); // get previous cursor position
+		bool pos_same = pos.x == curr_cursor_pos.x && pos.y == curr_cursor_pos.y; // compare current and previous positions
+		if (pos_same && !random_moving.load()) { // if the mouse hasn't moved by the user - start the countdown
+			++counter;
+			DLOG(std::cout << "tick " << counter.load() << '\n';)
+			if (counter.load() >= CYCLES_TO_WAIT) {
+				// if the mouse hasn't moved for a long time - start movinig
+				counter = 0;
+				random_moving.store(true);
+			}
+		}
+		else if (!pos_same) { // if the mouse moved by the user - stop moving
+			DLOG(if (random_moving.load() || counter.load() > 0) std::cout << '\n';)
+			random_moving.store(false);
+			counter = 0;
+		}
 
-            // 3. mouse_event
+		if (random_moving.load()) { // move the mouse
+			// 1. SetCursorPos - doesn't work mouse is not really moving
+			//SetCursorPos(cursorPos.x + ud(gen), cursorPos.y + ud(gen));
+
+			// 2. SendInput - screen flickers
+			//    -- flickering is because you have garbage in struct sometimes
+			//    -- zero it out using memset or something
+			//INPUT input;
+			//input.type = INPUT_MOUSE;
+			//input.mi.mouseData = 0;
+			//input.mi.dwFlags = MOUSEEVENTF_MOVE;
+			//input.mi.dx = ud(gen);
+			//input.mi.dy = ud(gen);
+			//input.mi.dwExtraInfo = NULL;
+			//SendInput(1, &input, sizeof(input));
+
+			// 3. mouse_event
 			int dx = ud(gen);
 			int dy = ud(gen);
-            mouse_event(MOUSEEVENTF_MOVE, dx, dy, 0, 0);
-			GetCursorPos(&curr_pos);
-			global_pos.store(curr_pos);
-            std::this_thread::sleep_for(DELAY_BETWEEN_MOVES);
-        }
-        else {
-            std::this_thread::sleep_for(DELAY_BETWEEN_CHECKS);
-            GetCursorPos(&pos);
-            if (pos.x == curr_pos.x && pos.y == curr_pos.y) {
-                ++counter;
-				#ifdef _DEBUG
-                std::cout << "tick " << counter.load() << '\n';
-				#endif
-                if (counter.load() >= CYCLES_TO_WAIT) {
-                    counter = 0;
-                    random_moving.store(true);
-                }
-            }
-            else {
-                counter = 0;
-            }
-            std::swap(curr_pos, pos);
-        }
-    }
+			mouse_event(MOUSEEVENTF_MOVE, dx, dy, 0, 0);
+			GetCursorPos(&curr_cursor_pos);
+			std::this_thread::sleep_for(DELAY_BETWEEN_MOVES);
+		}
+		prev_cursor_pos.store(curr_cursor_pos);
+	}
 }
 
 //void left_click() {
@@ -117,16 +125,16 @@ void move_mouse() {
 void toggleMoving(bool &movingEnabled)
 {
 	#ifdef _DEBUG
-	std::cout << "MOVING ";
-	if (!random_moving) {
-		std::cout << "START";
-	}
-	else {
-		std::cout << "STOP";
-		counter = 0;
-	}
-	std::cout << '\n';
+		std::cout << "MOVING ";
+		if (!random_moving) {
+			std::cout << "START";
+		}
+		else {
+			std::cout << "STOP";
+		}
+		std::cout << '\n';
 	#endif // _DEBUG
+	counter = 0;
 	movingEnabled = random_moving.load();
 	while (!random_moving.compare_exchange_weak(movingEnabled, !movingEnabled)) {}
 }
@@ -163,12 +171,12 @@ int main()
         //std::cout << "\nMessage:" << msg.message;
         if (msg.message == WM_HOTKEY)
         {
-			#ifdef _DEBUG
+			DLOG(
             std::cout << "-> WM_HOTKEY 0x" << std::hex << msg.message << " received\n"
                       << "    lParam = " << std::hex << htonl(msg.lParam)
                       <<   "; wParam = " << std::hex << htonl(msg.wParam)
                       << '\n';
-			#endif // _DEBUG
+			)
 
             switch (htonl(msg.lParam) >> 8)
             {
