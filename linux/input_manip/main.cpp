@@ -13,20 +13,8 @@
 #include <thread>
 #include <vector>
 
-// macros to test bits within an array
-#define BITS_PER_LONG (sizeof(unsigned long) * 8)
-#define NBITS(x) ((((x)-1)/BITS_PER_LONG)+1)
-#define OFF(x)  ((x)%BITS_PER_LONG)
-#define BIT(x)  ((x)/BITS_PER_LONG)
-#define LONG(x) ((x)/BITS_PER_LONG)
-#define TEST_BIT(bit, array) ((array[LONG(bit)] >> OFF(bit)) & 1)
-
-// Debug log macro
-#ifdef _DEBUG
-	#define DLOG(x) x;
-#else // Release - noop
-	#define DLOG(x) ;
-#endif // _DEBUG
+#include "helper_macros.h"
+#include "ioctl_helpers.hpp"
 
 namespace fs = std::filesystem;
 
@@ -51,6 +39,7 @@ void emit(int fd, int type, int code, int val) {
 
 // listens for a keypress
 void keyboard_listener(int fd, std::string device_path) {
+	std::cout << "Listening for key on: " << get_dev_name(fd) << std::endl;
 	struct input_event ie;
 	while (true) {
 		// This is a blocking read. The OS puts this thread to sleep
@@ -71,28 +60,6 @@ void keyboard_listener(int fd, std::string device_path) {
 	}
 }
 
-// checks if a device is a keyboard that supports F2 key
-bool is_keyboard_with_F2(int fd) {
-	// unsigned long evbit[NBITS(EV_MAX)];
-	// memset(evbit, 0, sizeof(evbit));
-	// // Get supported event types (EV_SYN, EV_KEY, EV_REL, etc.)
-	// if (ioctl(fd, EVIOCGBIT(0, sizeof(evbit)), evbit) < 0) {
-	// 	DLOG(std::cerr << "ERROR: ioctl EVIOCGBIT(0)\n";)
-	// 	return false;
-	// }
-	// // Check if EV_KEY type is supported, if not - not a keyboard
-	// if (!TEST_BIT(EV_KEY, evbit)) {
-	// 	return false;
-	// }
-	// Check if F2 button is on the keyboard
-	unsigned long keybit[NBITS(KEY_MAX)];
-	memset(keybit, 0, sizeof(keybit));
-	if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybit)), keybit) < 0) {
-		DLOG(std::cerr << "ERROR: ioctl EVIOCGBIT(EV_KEY)\n";)
-		return false;
-	}
-	return TEST_BIT(KEY_F2, keybit);
-}
 
 // Toggle clicking by pressing F2
 // NOTE: this has to be called with sudo, because of ioctl and /dev/uinput
@@ -103,10 +70,10 @@ int main(int argc, char** argv) {
 		std::string path = entry.path().string();
 		if (path.find("event") != std::string::npos) {// only check /dev/input/*event*
 			int ev_fd = open(path.c_str(), O_RDONLY); // O_RDONLY makes read() blocking
-			bool with_ev_key = is_keyboard_with_F2(ev_fd);
-			DLOG(std::cout << '\'' << path << "' supports EV_KEY? - " << with_ev_key << std::endl)
 			if (ev_fd >= 0) {
-				if (with_ev_key) {
+				bool is_valid_device = is_keyboard_with_F2(ev_fd);
+				DLOG(std::cout << '\'' << path << "' is valid device? - " << is_valid_device << std::endl)
+				if (is_valid_device) {
 					listener_threads.emplace_back(keyboard_listener, ev_fd, path);
 				} else {
 					close(ev_fd);
