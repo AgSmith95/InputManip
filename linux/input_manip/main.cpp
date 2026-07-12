@@ -39,7 +39,8 @@ void emit(int fd, int type, int code, int val) {
 
 // listens for a keypress
 void keyboard_listener(int fd, std::string device_path) {
-	std::cout << "Listening for key on: " << get_dev_name(fd) << std::endl;
+	std::string device_name = get_dev_name(fd);
+	std::cout << "Listening for a key on: " << device_name << std::endl;
 	struct input_event ie;
 	while (true) {
 		// This is a blocking read. The OS puts this thread to sleep
@@ -47,7 +48,7 @@ void keyboard_listener(int fd, std::string device_path) {
 		if (read(fd, &ie, sizeof(ie)) > 0) {
 			if (ie.type == EV_KEY && ie.code == KEY_F2 && ie.value == 1) {
 				is_clicking = !is_clicking;
-				DLOG(std::cout << "\nF2 is pressed on '" << device_path << '\'';)
+				DLOG(std::cout << "\nF2 is pressed on '" << device_path << "' - '" << device_name << '\'';)
 				if (is_clicking) {
 					std::cout << "\n[+] Clicking STARTED" << std::endl;
 					// "Interrupt" the main thread to wake it up
